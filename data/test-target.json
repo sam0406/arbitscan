@@ -2,13 +2,16 @@
   "name": "ArbiScan Synthetic Benchmark 001",
   "mode": "synthetic",
   "range": {
-    "start": "100000",
-    "end": "1fffff"
+    "start": "80000000000000000000000000000000000",
+    "end": "fffffffffffffffffffffffffffffffffff"
   },
   "target": {
-    "publicKey": "SYNTHETIC-PUBLIC-KEY-001",
-    "btcAddress": "SYNTHETIC-BTC-ADDRESS-001",
+    "publicKey": "031f6a332d3c5c4f2de2378c012f429cd109ba07d69690c6c701b6bb87860d6640",
+    "btcAddress": "1QKBaU6WAeycb3DbKbLBkX7vJiaS8r42Xo",
     "candidateHash": ""
   },
   "notes": "Synthetic benchmark target. No Bitcoin private key is stored in ArbiScan."
 }
+
+
+
