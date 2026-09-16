@@ -1,15 +1,14 @@
 {
-  "name": "Synthetic Bitcoin Test 001",
-
+  "name": "ArbiScan Synthetic Benchmark 001",
+  "mode": "synthetic",
   "range": {
     "start": "100000",
     "end": "1fffff"
   },
-
   "target": {
-    "publicKey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "btcAddress": "1SyntheticTestAddress000000000000000"
+    "publicKey": "SYNTHETIC-PUBLIC-KEY-001",
+    "btcAddress": "SYNTHETIC-BTC-ADDRESS-001",
+    "candidateHash": ""
   },
-
-  "notes": "Synthetic benchmark input. The private test scalar is stored separately and is not included in ArbitScan."
+  "notes": "Synthetic benchmark target. No Bitcoin private key is stored in ArbiScan."
 }
