@@ -1,12 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
+
 import targetData from "@/data/test-target.json";
+
 import {
+  MAX_BENCHMARK_CANDIDATES,
   runBenchmark,
-  validateBenchmarkRange,
-  MAX_BENCHMARK_CANDIDATES
+  validateRange
 } from "@/lib/benchmark";
+
 import { positionInRange } from "@/lib/position";
 
 type Status =
@@ -21,44 +24,69 @@ export default function Home() {
   const [status, setStatus] =
     useState<Status>("idle");
 
-  const [progress, setProgress] = useState(0);
-  const [checked, setChecked] = useState(0);
+  const [progress, setProgress] =
+    useState(0);
+
+  const [checked, setChecked] =
+    useState(0);
+
   const [currentCandidate, setCurrentCandidate] =
     useState("");
 
-  const [result, setResult] = useState<{
-    candidate?: string;
-    candidateHash?: string;
-    offset?: string;
-    total?: string;
-    percentage?: string;
-    candidatesChecked?: number;
-    elapsedMs?: number;
-  }>({});
+  const [speed, setSpeed] =
+    useState(0);
 
-  const [error, setError] = useState("");
+  const [elapsed, setElapsed] =
+    useState(0);
+
+  const [error, setError] =
+    useState("");
+
+  const [result, setResult] =
+    useState<{
+      candidate?: string;
+      matchToken?: string;
+      offset?: string;
+      total?: string;
+      percentage?: string;
+      candidatesChecked?: number;
+      elapsedMs?: number;
+      candidatesPerSecond?: number;
+    }>({});
 
   const range = targetData.range;
   const target = targetData.target;
 
   const rangeInfo = useMemo(() => {
     try {
-      const info = validateBenchmarkRange(
+      const info = validateRange(
         range.start,
         range.end
       );
 
+      const total = info.total;
+
+      const isPowerOfTwo =
+        total > 0n &&
+        (total & (total - 1n)) === 0n;
+
+      const exponent = isPowerOfTwo
+        ? total.toString(2).length - 1
+        : null;
+
       return {
-        total: info.total.toString(),
-        valid: true
+        valid: true,
+        total,
+        exponent
       };
     } catch {
       return {
-        total: "0",
-        valid: false
+        valid: false,
+        total: 0n,
+        exponent: null
       };
     }
-  }, []);
+  }, [range.start, range.end]);
 
   async function startCalculation() {
     if (status === "running") {
@@ -69,70 +97,106 @@ export default function Home() {
     setProgress(0);
     setChecked(0);
     setCurrentCandidate("");
+    setSpeed(0);
+    setElapsed(0);
     setResult({});
     setError("");
 
     try {
-      const response = await runBenchmark(
-        range.start,
-        range.end,
-        target.candidateHash,
-        (
-          checkedCount,
-          totalCount,
-          candidate
-        ) => {
-          setChecked(checkedCount);
-          setCurrentCandidate(candidate);
-
-          const percentage =
-            (checkedCount / totalCount) * 100;
-
-          setProgress(percentage);
-        }
-      );
-
-      setChecked(response.candidatesChecked);
-
-      if (!response.found || !response.candidate) {
-        setProgress(
-          response.candidatesChecked /
-            Number(rangeInfo.total) *
-            100
+      const response =
+        await runBenchmark(
+          range.start,
+          range.end,
+          target.matchToken,
+          (update) => {
+            setChecked(update.checked);
+            setProgress(update.percentage);
+            setCurrentCandidate(
+              update.currentCandidate
+            );
+            setSpeed(
+              update.candidatesPerSecond
+            );
+            setElapsed(update.elapsedMs);
+          }
         );
 
+      setChecked(
+        response.candidatesChecked
+      );
+
+      setSpeed(
+        response.candidatesPerSecond
+      );
+
+      setElapsed(
+        response.elapsedMs
+      );
+
+      if (
+        !response.found ||
+        !response.candidate
+      ) {
         setStatus("not-found");
 
-        setResult({
-          candidatesChecked:
-            response.candidatesChecked,
-          elapsedMs: response.elapsedMs
-        });
+        setProgress(
+          rangeInfo.total > 0n
+            ? (BigInt(
+                response.candidatesChecked
+              ) *
+                100) /
+                rangeInfo.total >
+              100n
+              ? 100
+              : Number(
+                  (BigInt(
+                    response.candidatesChecked
+                  ) *
+                    1000000n) /
+                    rangeInfo.total
+                ) / 10000
+            : 0
+        );
 
         return;
       }
 
-      const position = positionInRange(
-        range.start,
-        range.end,
+      const position =
+        positionInRange(
+          range.start,
+          range.end,
+          response.candidate
+        );
+
+      setProgress(100);
+      setCurrentCandidate(
         response.candidate
       );
 
-      setProgress(100);
-      setCurrentCandidate(response.candidate);
-
       setResult({
-        candidate: response.candidate,
-        candidateHash:
-          response.candidateHash,
-        offset: position.offset,
-        total: position.total,
+        candidate:
+          response.candidate,
+
+        matchToken:
+          response.matchToken,
+
+        offset:
+          position.offset,
+
+        total:
+          position.total,
+
         percentage:
           position.percentageFormatted,
+
         candidatesChecked:
           response.candidatesChecked,
+
         elapsedMs:
-          response.elapsedMs
+          response.elapsedMs,
+
+        candidatesPerSecond:
+          response.candidatesPerSecond
       });
 
       setStatus("found");
@@ -142,7 +206,7 @@ export default function Home() {
       setError(
         err instanceof Error
           ? err.message
-          : "Unknown calculation error."
+          : "Calculation failed."
       );
     }
   }
@@ -152,11 +216,15 @@ export default function Home() {
     setProgress(0);
     setChecked(0);
     setCurrentCandidate("");
+    setSpeed(0);
+    setElapsed(0);
     setResult({});
     setError("");
   }
 
-  function formatNumber(value: number) {
+  function formatNumber(
+    value: number
+  ) {
     return new Intl.NumberFormat(
       "en-US"
     ).format(value);
@@ -165,43 +233,61 @@ export default function Home() {
   return (
     <main className="page">
       <section className="container">
-        <div className="header">
+
+        <header className="header">
           <div>
             <div className="eyebrow">
               ARBITSCAN
             </div>
 
             <h1>
-              Synthetic Cryptographic Benchmark
+              Synthetic Cryptographic
+              Benchmark
             </h1>
 
             <p className="subtitle">
-              Bounded deterministic range search
-              with live progress and exact
-              position reporting.
+              Deterministic bounded-range
+              calculation with live progress,
+              matching and exact range
+              positioning.
             </p>
           </div>
 
           <div
             className={`status status-${status}`}
           >
-            {status === "idle" && "READY"}
-            {status === "running" && "RUNNING"}
-            {status === "found" && "MATCH FOUND"}
+            {status === "idle" &&
+              "READY"}
+
+            {status === "running" &&
+              "RUNNING"}
+
+            {status === "found" &&
+              "MATCH FOUND"}
+
             {status === "not-found" &&
               "NO MATCH"}
+
             {status === "stopped" &&
               "STOPPED"}
-            {status === "error" && "ERROR"}
+
+            {status === "error" &&
+              "ERROR"}
           </div>
-        </div>
+        </header>
 
         <section className="card">
-          <h2>Benchmark Input</h2>
+          <h2>
+            Target Configuration
+          </h2>
 
           <div className="grid">
+
             <div className="field">
-              <label>Range Start</label>
+              <label>
+                Range Start
+              </label>
+
               <input
                 value={range.start}
                 readOnly
@@ -209,16 +295,23 @@ export default function Home() {
             </div>
 
             <div className="field">
-              <label>Range End</label>
+              <label>
+                Range End
+              </label>
+
               <input
                 value={range.end}
                 readOnly
               />
             </div>
+
           </div>
 
           <div className="field">
-            <label>Synthetic Public Key</label>
+            <label>
+              Synthetic Public Key
+            </label>
+
             <input
               value={target.publicKey}
               readOnly
@@ -226,7 +319,10 @@ export default function Home() {
           </div>
 
           <div className="field">
-            <label>BTC Address Field</label>
+            <label>
+              Synthetic BTC Address
+            </label>
+
             <input
               value={target.btcAddress}
               readOnly
@@ -234,23 +330,59 @@ export default function Home() {
           </div>
 
           <div className="field">
-            <label>Target Cryptographic Hash</label>
+            <label>
+              Synthetic Match Token
+            </label>
+
             <input
-              value={target.candidateHash}
+              value={target.matchToken}
               readOnly
             />
           </div>
 
           <div className="notice">
-            Synthetic benchmark only. The
-            private test scalar is not stored
-            in this application.
+            The public key and address are
+            target metadata. The private test
+            scalar is not stored in ArbiScan.
           </div>
         </section>
 
         <section className="card">
+
+          <div className="range-info">
+
+            <div>
+              <span>
+                Range Size
+              </span>
+
+              <strong>
+                {rangeInfo.valid
+                  ? rangeInfo.total.toLocaleString(
+                      "en-US"
+                    )
+                  : "Invalid"}
+              </strong>
+            </div>
+
+            <div>
+              <span>
+                Range Power
+              </span>
+
+              <strong>
+                {rangeInfo.exponent !== null
+                  ? `2^${rangeInfo.exponent}`
+                  : "Non power-of-two"}
+              </strong>
+            </div>
+
+          </div>
+
           <div className="progress-header">
-            <h2>Calculation</h2>
+            <h2>
+              Calculation
+            </h2>
 
             <strong>
               {progress.toFixed(4)}%
@@ -270,44 +402,100 @@ export default function Home() {
           </div>
 
           <div className="stats">
+
             <div>
-              <span>Checked</span>
+              <span>
+                Checked
+              </span>
+
               <strong>
                 {formatNumber(checked)}
               </strong>
             </div>
 
             <div>
-              <span>Total</span>
+              <span>
+                Range Size
+              </span>
+
               <strong>
-                {formatNumber(
-                  Number(rangeInfo.total)
+                {rangeInfo.total.toLocaleString(
+                  "en-US"
                 )}
               </strong>
             </div>
 
             <div>
-              <span>Limit</span>
+              <span>
+                Benchmark Limit
+              </span>
+
               <strong>
                 {formatNumber(
                   MAX_BENCHMARK_CANDIDATES
                 )}
               </strong>
             </div>
+
+          </div>
+
+          <div className="stats">
+
+            <div>
+              <span>
+                Candidates / Second
+              </span>
+
+              <strong>
+                {formatNumber(
+                  Math.round(speed)
+                )}
+              </strong>
+            </div>
+
+            <div>
+              <span>
+                Elapsed
+              </span>
+
+              <strong>
+                {(elapsed / 1000).toFixed(
+                  3
+                )}s
+              </strong>
+            </div>
+
+            <div>
+              <span>
+                Status
+              </span>
+
+              <strong>
+                {status.toUpperCase()}
+              </strong>
+            </div>
+
           </div>
 
           <div className="candidate">
-            <span>Current Candidate</span>
+
+            <span>
+              Current Candidate
+            </span>
 
             <code>
               {currentCandidate ||
                 "Waiting to start..."}
             </code>
+
           </div>
 
           <div className="actions">
+
             <button
-              onClick={startCalculation}
+              onClick={
+                startCalculation
+              }
               disabled={
                 status === "running"
               }
@@ -326,51 +514,75 @@ export default function Home() {
             >
               Reset
             </button>
+
           </div>
+
         </section>
 
         {status === "found" && (
           <section className="card result-card">
-            <h2>Match Found</h2>
+
+            <h2>
+              Match Found
+            </h2>
 
             <div className="result-grid">
+
               <div>
-                <span>Discovered Candidate</span>
+                <span>
+                  Discovered Candidate
+                </span>
+
                 <code>
                   {result.candidate}
                 </code>
               </div>
 
               <div>
-                <span>Candidate Hash</span>
+                <span>
+                  Match Token
+                </span>
+
                 <code>
-                  {result.candidateHash}
+                  {result.matchToken}
                 </code>
               </div>
 
               <div>
-                <span>Offset From Start</span>
+                <span>
+                  Offset From Start
+                </span>
+
                 <strong>
                   {result.offset}
                 </strong>
               </div>
 
               <div>
-                <span>Total Range</span>
+                <span>
+                  Total Candidates
+                </span>
+
                 <strong>
                   {result.total}
                 </strong>
               </div>
 
               <div>
-                <span>Position</span>
+                <span>
+                  Position In Range
+                </span>
+
                 <strong>
                   {result.percentage}
                 </strong>
               </div>
 
               <div>
-                <span>Candidates Checked</span>
+                <span>
+                  Candidates Checked
+                </span>
+
                 <strong>
                   {formatNumber(
                     result.candidatesChecked ||
@@ -380,36 +592,70 @@ export default function Home() {
               </div>
 
               <div>
-                <span>Elapsed</span>
+                <span>
+                  Speed
+                </span>
+
+                <strong>
+                  {formatNumber(
+                    Math.round(
+                      result.candidatesPerSecond ||
+                        0
+                    )
+                  )}{" "}
+                  / sec
+                </strong>
+              </div>
+
+              <div>
+                <span>
+                  Elapsed
+                </span>
+
                 <strong>
                   {(
-                    (result.elapsedMs || 0) /
-                    1000
+                    (result.elapsedMs ||
+                      0) / 1000
                   ).toFixed(3)}
                   s
                 </strong>
               </div>
+
             </div>
+
           </section>
         )}
 
         {status === "not-found" && (
           <section className="card">
-            <h2>No Match</h2>
+
+            <h2>
+              No Match
+            </h2>
+
             <p>
-              The supplied target was not found
-              within the configured benchmark
-              range.
+              No matching synthetic candidate
+              was found in the configured
+              executable benchmark range.
             </p>
+
           </section>
         )}
 
         {status === "error" && (
           <section className="card error-card">
-            <h2>Calculation Error</h2>
-            <p>{error}</p>
+
+            <h2>
+              Calculation Error
+            </h2>
+
+            <p>
+              {error}
+            </p>
+
           </section>
         )}
+
       </section>
     </main>
   );
