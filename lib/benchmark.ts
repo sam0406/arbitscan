@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { parseHex } from "./position";
 
-export const MAX_BENCHMARK_CANDIDATES = 2_000_000;
+export const MAX_BENCHMARK_CANDIDATES = 22_307_074_000_000_000_000_000_000_000_000_000_000;
 
 export type BenchmarkTarget = {
   publicKey: string;
