@@ -1,64 +1,112 @@
-import { createHash } from "crypto";
 import { parseHex } from "./position";
 
-export const MAX_BENCHMARK_CANDIDATES = 22_307_074_000_000_000_000_000_000_000_000_000_000;
+export const MAX_BENCHMARK_CANDIDATES = 10_000_000;
 
-export type BenchmarkTarget = {
-  publicKey: string;
-  btcAddress: string;
-  candidateHash: string;
+export type BenchmarkRange = {
+  start: bigint;
+  end: bigint;
+  total: bigint;
+};
+
+export type BenchmarkProgress = {
+  checked: number;
+  total: number;
+  percentage: number;
+  currentCandidate: string;
+  candidatesPerSecond: number;
+  elapsedMs: number;
 };
 
 export type BenchmarkResult = {
   found: boolean;
   candidate?: string;
-  candidateHash?: string;
+  matchToken?: string;
   candidatesChecked: number;
   elapsedMs: number;
+  candidatesPerSecond: number;
 };
 
-function sha256(value: string): string {
-  return createHash("sha256")
-    .update(value, "utf8")
-    .digest("hex");
-}
-
-/**
- * Deterministic synthetic cryptographic target.
- *
- * This deliberately does NOT derive a Bitcoin public key/address.
- * It gives ArbiScan a genuine cryptographic comparison target
- * without turning the application into a Bitcoin private-key
- * recovery engine.
- */
-export function hashCandidate(candidate: bigint): string {
-  return sha256(candidate.toString(16).padStart(64, "0"));
-}
-
-export function validateBenchmarkRange(
+export function validateRange(
   startInput: string,
   endInput: string
-) {
+): BenchmarkRange {
   const start = parseHex(startInput);
   const end = parseHex(endInput);
 
   if (start > end) {
-    throw new Error("Range start is greater than range end.");
-  }
-
-  const total = end - start + 1n;
-
-  if (total > BigInt(MAX_BENCHMARK_CANDIDATES)) {
     throw new Error(
-      `Synthetic benchmark is limited to ${MAX_BENCHMARK_CANDIDATES.toLocaleString()} candidates.`
+      "Range start is greater than range end."
     );
   }
 
   return {
     start,
     end,
-    total
+    total: end - start + 1n
   };
+}
+
+export function validateBenchmarkRange(
+  startInput: string,
+  endInput: string
+): BenchmarkRange {
+  const range = validateRange(
+    startInput,
+    endInput
+  );
+
+  if (
+    range.total >
+    BigInt(MAX_BENCHMARK_CANDIDATES)
+  ) {
+    throw new Error(
+      `This synthetic calculation contains ${range.total.toLocaleString(
+        "en-US"
+      )} candidates. The executable synthetic benchmark is limited to ${MAX_BENCHMARK_CANDIDATES.toLocaleString(
+        "en-US"
+      )} candidates.`
+    );
+  }
+
+  return range;
+}
+
+/**
+ * Browser-safe SHA-256.
+ *
+ * The input is the normalized 64-character
+ * hexadecimal representation of a candidate.
+ */
+export async function hashCandidate(
+  candidate: bigint
+): Promise<string> {
+  const normalized = candidate
+    .toString(16)
+    .padStart(64, "0");
+
+  const data = new TextEncoder().encode(
+    normalized
+  );
+
+  const digest =
+    await crypto.subtle.digest(
+      "SHA-256",
+      data
+    );
+
+  return Array.from(
+    new Uint8Array(digest)
+  )
+    .map((byte) =>
+      byte.toString(16).padStart(2, "0")
+    )
+    .join("");
+}
+
+function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
 }
 
 export async function runBenchmark(
@@ -66,81 +114,118 @@ export async function runBenchmark(
   endInput: string,
   targetHash: string,
   onProgress?: (
-    checked: number,
-    total: number,
-    currentCandidate: string
+    progress: BenchmarkProgress
   ) => void,
   shouldStop?: () => boolean
 ): Promise<BenchmarkResult> {
-  const { start, end, total } =
-    validateBenchmarkRange(startInput, endInput);
+  const range = validateBenchmarkRange(
+    startInput,
+    endInput
+  );
 
-  const normalizedTarget = targetHash
-    .trim()
-    .toLowerCase();
+  const normalizedTarget =
+    targetHash.trim().toLowerCase();
 
-  if (!/^[0-9a-f]{64}$/.test(normalizedTarget)) {
+  if (
+    !/^[0-9a-f]{64}$/.test(
+      normalizedTarget
+    )
+  ) {
     throw new Error(
-      "Target hash must be a 64-character hexadecimal SHA-256 value."
+      "Synthetic match token must be a 64-character hexadecimal SHA-256 value."
     );
   }
 
-  const totalNumber = Number(total);
+  const total = Number(range.total);
+
   let checked = 0;
 
   const started = performance.now();
+  let lastUpdate = started;
 
   for (
-    let candidate = start;
-    candidate <= end;
+    let candidate = range.start;
+    candidate <= range.end;
     candidate++
   ) {
     if (shouldStop?.()) {
+      const elapsed =
+        performance.now() - started;
+
       return {
         found: false,
         candidatesChecked: checked,
-        elapsedMs: performance.now() - started
+        elapsedMs: elapsed,
+        candidatesPerSecond:
+          checked / Math.max(elapsed / 1000, 0.001)
       };
     }
 
-    const candidateHash = hashCandidate(candidate);
+    const candidateHash =
+      await hashCandidate(candidate);
 
     checked++;
 
-    if (candidateHash === normalizedTarget) {
+    if (
+      candidateHash ===
+      normalizedTarget
+    ) {
+      const elapsed =
+        performance.now() - started;
+
       return {
         found: true,
         candidate: candidate
           .toString(16)
           .padStart(64, "0"),
-        candidateHash,
+        matchToken: candidateHash,
         candidatesChecked: checked,
-        elapsedMs: performance.now() - started
+        elapsedMs: elapsed,
+        candidatesPerSecond:
+          checked /
+          Math.max(elapsed / 1000, 0.001)
       };
     }
 
+    const now = performance.now();
+
     if (
       checked === 1 ||
-      checked % 1000 === 0 ||
-      checked === totalNumber
+      checked % 250 === 0 ||
+      now - lastUpdate >= 100
     ) {
-      onProgress?.(
-        checked,
-        totalNumber,
-        candidate
-          .toString(16)
-          .padStart(64, "0")
-      );
+      lastUpdate = now;
 
-      await new Promise<void>((resolve) =>
-        setTimeout(resolve, 0)
-      );
+      const elapsed =
+        now - started;
+
+      onProgress?.({
+        checked,
+        total,
+        percentage:
+          (checked / total) * 100,
+        currentCandidate: candidate
+          .toString(16)
+          .padStart(64, "0"),
+        candidatesPerSecond:
+          checked /
+          Math.max(elapsed / 1000, 0.001),
+        elapsedMs: elapsed
+      });
+
+      await yieldToBrowser();
     }
   }
+
+  const elapsed =
+    performance.now() - started;
 
   return {
     found: false,
     candidatesChecked: checked,
-    elapsedMs: performance.now() - started
+    elapsedMs: elapsed,
+    candidatesPerSecond:
+      checked /
+      Math.max(elapsed / 1000, 0.001)
   };
 }
