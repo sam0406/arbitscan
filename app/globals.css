@@ -10,15 +10,16 @@ body {
 }
 
 body {
-  background: #070a0f;
-  color: #f5f7fa;
   font-family:
     Inter,
+    ui-sans-serif,
     system-ui,
     -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
+  background: #080b12;
+  color: #f4f7fb;
 }
 
 button,
@@ -28,222 +29,238 @@ input {
 
 .page {
   min-height: 100vh;
-  padding: 35px 18px 70px;
+  padding: 48px 20px;
 }
 
 .container {
-  max-width: 1100px;
-  margin: auto;
+  width: min(1050px, 100%);
+  margin: 0 auto;
 }
 
 .header {
-  margin-bottom: 25px;
-}
-
-.brand {
   display: flex;
-  align-items: center;
-  gap: 14px;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-start;
+  margin-bottom: 28px;
 }
 
-.logo {
-  width: 48px;
-  height: 48px;
-  display: grid;
-  place-items: center;
-  border-radius: 12px;
-  background: #f7931a;
-  color: #111;
-  font-size: 25px;
-  font-weight: 900;
+.eyebrow {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  opacity: 0.6;
+  margin-bottom: 10px;
 }
 
-.title {
+h1 {
   margin: 0;
-  font-size: 34px;
-  letter-spacing: -1px;
-}
-
-.subtitle {
-  margin: 5px 0 0;
-  color: #8994a3;
-}
-
-.card {
-  background: #0d1219;
-  border: 1px solid #202936;
-  border-radius: 16px;
-  padding: 23px;
-  margin-bottom: 20px;
+  font-size: clamp(30px, 5vw, 48px);
+  line-height: 1.05;
 }
 
 h2 {
   margin: 0 0 20px;
-  font-size: 19px;
+  font-size: 20px;
+}
+
+.subtitle {
+  color: #9ca8ba;
+  max-width: 650px;
+  line-height: 1.6;
+  margin: 14px 0 0;
+}
+
+.status {
+  border: 1px solid #283142;
+  border-radius: 999px;
+  padding: 8px 13px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.card {
+  background: #10151f;
+  border: 1px solid #202938;
+  border-radius: 18px;
+  padding: 24px;
+  margin-bottom: 18px;
+  box-shadow: 0 15px 45px rgba(0, 0, 0, 0.18);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
 }
 
 .field {
   margin-bottom: 17px;
 }
 
-label {
+.field label,
+.candidate span,
+.result-grid span,
+.stats span {
   display: block;
-  margin-bottom: 7px;
-  color: #aeb7c4;
-  font-size: 13px;
-  font-weight: 650;
+  color: #8491a5;
+  font-size: 12px;
+  margin-bottom: 8px;
 }
 
 input {
   width: 100%;
-  min-height: 48px;
-  padding: 12px 14px;
-  border: 1px solid #293442;
-  border-radius: 9px;
+  background: #080c13;
+  color: #e9eef7;
+  border: 1px solid #293447;
+  border-radius: 10px;
+  padding: 12px 13px;
   outline: none;
-  background: #080c12;
-  color: #fff;
-  font-family: monospace;
-  font-size: 14px;
 }
 
 input:focus {
-  border-color: #f7931a;
+  border-color: #60708b;
 }
 
-.actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 20px;
+.notice {
+  padding: 13px 15px;
+  border-radius: 10px;
+  background: #151d29;
+  color: #aab5c5;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
-button {
-  min-height: 46px;
-  border: 0;
-  border-radius: 9px;
-  padding: 0 22px;
-  background: #f7931a;
-  color: #111;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-button.secondary {
-  background: #202936;
-  color: #fff;
-}
-
-button:disabled {
-  opacity: .45;
-  cursor: not-allowed;
-}
-
-.progressBox {
-  margin-top: 20px;
-}
-
-.progressHeader {
+.progress-header {
   display: flex;
   justify-content: space-between;
-  gap: 10px;
-  font-size: 13px;
-  color: #9aa5b3;
+  align-items: center;
 }
 
-.progressTrack {
-  height: 18px;
-  margin-top: 10px;
+.progress-header h2 {
+  margin-bottom: 0;
+}
+
+.progress-header strong {
+  font-size: 22px;
+}
+
+.progress-track {
+  width: 100%;
+  height: 12px;
+  margin: 22px 0;
+  background: #080c13;
   border-radius: 999px;
   overflow: hidden;
-  background: #202936;
 }
 
-.progressBar {
+.progress-bar {
   height: 100%;
-  background: #f7931a;
-  transition: width .1s linear;
-}
-
-.current {
-  margin-top: 10px;
-  padding: 12px;
-  border-radius: 8px;
-  background: #080c12;
-  color: #8994a3;
-  font-family: monospace;
-  font-size: 12px;
-  overflow-wrap: anywhere;
+  background: #8ba5ff;
+  border-radius: inherit;
+  transition: width 0.1s linear;
 }
 
 .stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
+  margin-bottom: 20px;
 }
 
-.stat {
-  padding: 16px;
-  border-radius: 10px;
-  border: 1px solid #202936;
-  background: #080c12;
+.stats > div,
+.result-grid > div {
+  background: #0b1018;
+  border: 1px solid #1e2938;
+  border-radius: 11px;
+  padding: 14px;
 }
 
-.statLabel {
-  color: #7f8997;
-  font-size: 11px;
-  margin-bottom: 7px;
+.stats strong {
+  font-size: 17px;
 }
 
-.statValue {
-  font-family: monospace;
-  font-size: 14px;
-  overflow-wrap: anywhere;
+.candidate {
+  background: #080c13;
+  border: 1px solid #1e2938;
+  padding: 15px;
+  border-radius: 11px;
+  margin-bottom: 20px;
 }
 
-.result {
-  border-color: #46522e;
-  background: #10160c;
-}
-
-.percent {
-  font-size: 46px;
-  font-weight: 900;
-  margin-bottom: 8px;
-}
-
-.error {
-  margin-top: 14px;
-  padding: 12px;
-  border-radius: 9px;
-  background: #291416;
-  border: 1px solid #633236;
-  color: #ffaaa5;
-}
-
-.note {
-  color: #7f8997;
+code {
+  display: block;
+  overflow-x: auto;
+  white-space: nowrap;
+  color: #dce5f4;
+  font-family:
+    "SFMono-Regular",
+    Consolas,
+    "Liberation Mono",
+    monospace;
   font-size: 12px;
-  line-height: 1.6;
 }
 
-@media (max-width: 750px) {
+.actions {
+  display: flex;
+  gap: 10px;
+}
+
+button {
+  border: 0;
+  border-radius: 10px;
+  padding: 12px 18px;
+  cursor: pointer;
+  background: #e7edf7;
+  color: #0a0d13;
+  font-weight: 800;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button.secondary {
+  background: #1b2432;
+  color: #dce4ef;
+}
+
+.result-card {
+  border-color: #354b6b;
+}
+
+.result-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.result-grid strong {
+  font-size: 16px;
+}
+
+.error-card {
+  border-color: #613c42;
+}
+
+@media (max-width: 700px) {
   .page {
-    padding: 22px 13px;
+    padding: 28px 14px;
   }
 
-  .title {
-    font-size: 28px;
-  }
-
-  .stats {
-    grid-template-columns: 1fr;
-  }
-
-  .actions {
+  .header {
     flex-direction: column;
   }
 
-  button {
-    width: 100%;
+  .grid,
+  .stats,
+  .result-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .card {
+    padding: 18px;
   }
 }
