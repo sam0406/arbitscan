@@ -1,26 +1,62 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 
 import targetData from "@/data/test-target.json";
 
 import {
   MAX_BENCHMARK_CANDIDATES,
-  runBenchmark,
   validateRange
 } from "@/lib/benchmark";
-
-import { positionInRange } from "@/lib/position";
 
 type Status =
   | "idle"
   | "running"
   | "found"
-  | "not-found"
+  | "complete"
   | "stopped"
   | "error";
 
+type WorkerResponse =
+  | {
+      type: "progress";
+      checked: number;
+      percentage: number;
+      elapsedMs: number;
+      candidatesPerSecond: number;
+    }
+  | {
+      type: "found";
+      checked: number;
+      percentage: number;
+      elapsedMs: number;
+      candidatesPerSecond: number;
+    }
+  | {
+      type: "complete";
+      checked: number;
+      elapsedMs: number;
+      candidatesPerSecond: number;
+    }
+  | {
+      type: "stopped";
+      checked: number;
+      elapsedMs: number;
+    }
+  | {
+      type: "error";
+      message: string;
+    };
+
 export default function Home() {
+  const workerRef =
+    useRef<Worker | null>(null);
+
   const [status, setStatus] =
     useState<Status>("idle");
 
@@ -30,195 +66,285 @@ export default function Home() {
   const [checked, setChecked] =
     useState(0);
 
-  const [currentCandidate, setCurrentCandidate] =
-    useState("");
-
   const [speed, setSpeed] =
     useState(0);
 
   const [elapsed, setElapsed] =
     useState(0);
 
+  const [position, setPosition] =
+    useState<string>("");
+
   const [error, setError] =
     useState("");
 
-  const [result, setResult] =
-    useState<{
-      candidate?: string;
-      matchToken?: string;
-      offset?: string;
-      total?: string;
-      percentage?: string;
-      candidatesChecked?: number;
-      elapsedMs?: number;
-      candidatesPerSecond?: number;
-    }>({});
+  const range =
+    targetData.range;
 
-  const range = targetData.range;
-  const target = targetData.target;
+  const target =
+    targetData.target;
 
   const rangeInfo = useMemo(() => {
     try {
-      const info = validateRange(
-        range.start,
-        range.end
-      );
+      const info =
+        validateRange(
+          range.start,
+          range.end
+        );
 
-      const total = info.total;
+      const total =
+        info.total;
 
-      const isPowerOfTwo =
+      const power =
         total > 0n &&
-        (total & (total - 1n)) === 0n;
-
-      const exponent = isPowerOfTwo
-        ? total.toString(2).length - 1
-        : null;
+        (total &
+          (total - 1n)) === 0n
+          ? total.toString(2)
+              .length - 1
+          : null;
 
       return {
         valid: true,
         total,
-        exponent
+        power
       };
     } catch {
       return {
         valid: false,
         total: 0n,
-        exponent: null
+        power: null
       };
     }
-  }, [range.start, range.end]);
+  }, [
+    range.start,
+    range.end
+  ]);
 
-  async function startCalculation() {
+  useEffect(() => {
+    return () => {
+      workerRef.current?.terminate();
+    };
+  }, []);
+
+  function startCalculation() {
     if (status === "running") {
       return;
     }
 
+    if (!rangeInfo.valid) {
+      setStatus("error");
+      setError(
+        "Invalid calculation range."
+      );
+      return;
+    }
+
+    if (
+      rangeInfo.total >
+      BigInt(
+        MAX_BENCHMARK_CANDIDATES
+      )
+    ) {
+      setStatus("error");
+      setError(
+        `The selected range contains ${rangeInfo.total.toLocaleString(
+          "en-US"
+        )} candidates. The current synthetic benchmark limit is ${MAX_BENCHMARK_CANDIDATES.toLocaleString(
+          "en-US"
+        )}.`
+      );
+      return;
+    }
+
+    if (
+      !target.targetHash ||
+      !/^[0-9a-f]{64}$/i.test(
+        target.targetHash
+      )
+    ) {
+      setStatus("error");
+      setError(
+        "The synthetic benchmark target has not been generated yet."
+      );
+      return;
+    }
+
+    workerRef.current?.terminate();
+
+    const worker =
+      new Worker(
+        new URL(
+          "../workers/benchmark.worker.ts",
+          import.meta.url
+        )
+      );
+
+    workerRef.current =
+      worker;
+
     setStatus("running");
     setProgress(0);
     setChecked(0);
-    setCurrentCandidate("");
     setSpeed(0);
     setElapsed(0);
-    setResult({});
+    setPosition("");
     setError("");
 
-    try {
-      const response =
-        await runBenchmark(
-          range.start,
-          range.end,
-          target.matchToken,
-          (update) => {
-            setChecked(update.checked);
-            setProgress(update.percentage);
-            setCurrentCandidate(
-              update.currentCandidate
-            );
-            setSpeed(
-              update.candidatesPerSecond
-            );
-            setElapsed(update.elapsedMs);
-          }
-        );
-
-      setChecked(
-        response.candidatesChecked
-      );
-
-      setSpeed(
-        response.candidatesPerSecond
-      );
-
-      setElapsed(
-        response.elapsedMs
-      );
+    worker.onmessage = (
+      event: MessageEvent<WorkerResponse>
+    ) => {
+      const message =
+        event.data;
 
       if (
-        !response.found ||
-        !response.candidate
+        message.type ===
+        "progress"
       ) {
-        setStatus("not-found");
+        setChecked(
+          message.checked
+        );
 
         setProgress(
-          rangeInfo.total > 0n
-            ? (BigInt(
-                response.candidatesChecked
-              ) *
-                100) /
-                rangeInfo.total >
-              100n
-              ? 100
-              : Number(
-                  (BigInt(
-                    response.candidatesChecked
-                  ) *
-                    1000000n) /
-                    rangeInfo.total
-                ) / 10000
-            : 0
+          message.percentage
+        );
+
+        setSpeed(
+          message.candidatesPerSecond
+        );
+
+        setElapsed(
+          message.elapsedMs
         );
 
         return;
       }
 
-      const position =
-        positionInRange(
-          range.start,
-          range.end,
-          response.candidate
+      if (
+        message.type === "found"
+      ) {
+        setStatus("found");
+
+        setChecked(
+          message.checked
         );
 
-      setProgress(100);
-      setCurrentCandidate(
-        response.candidate
-      );
+        setProgress(100);
 
-      setResult({
-        candidate:
-          response.candidate,
+        setSpeed(
+          message.candidatesPerSecond
+        );
 
-        matchToken:
-          response.matchToken,
+        setElapsed(
+          message.elapsedMs
+        );
 
-        offset:
-          position.offset,
+        setPosition(
+          `${message.percentage.toFixed(
+            10
+          )}%`
+        );
 
-        total:
-          position.total,
+        worker.terminate();
 
-        percentage:
-          position.percentageFormatted,
+        return;
+      }
 
-        candidatesChecked:
-          response.candidatesChecked,
+      if (
+        message.type ===
+        "complete"
+      ) {
+        setStatus("complete");
 
-        elapsedMs:
-          response.elapsedMs,
+        setChecked(
+          message.checked
+        );
 
-        candidatesPerSecond:
-          response.candidatesPerSecond
-      });
+        setProgress(100);
 
-      setStatus("found");
-    } catch (err) {
+        setSpeed(
+          message.candidatesPerSecond
+        );
+
+        setElapsed(
+          message.elapsedMs
+        );
+
+        worker.terminate();
+
+        return;
+      }
+
+      if (
+        message.type ===
+        "stopped"
+      ) {
+        setStatus("stopped");
+
+        setChecked(
+          message.checked
+        );
+
+        setElapsed(
+          message.elapsedMs
+        );
+
+        worker.terminate();
+
+        return;
+      }
+
+      if (
+        message.type === "error"
+      ) {
+        setStatus("error");
+
+        setError(
+          message.message
+        );
+
+        worker.terminate();
+      }
+    };
+
+    worker.onerror = () => {
       setStatus("error");
 
       setError(
-        err instanceof Error
-          ? err.message
-          : "Calculation failed."
+        "Benchmark worker failed."
       );
-    }
+
+      worker.terminate();
+    };
+
+    worker.postMessage({
+      type: "start",
+      start: range.start,
+      end: range.end,
+      target:
+        target.targetHash
+    });
+  }
+
+  function stopCalculation() {
+    workerRef.current?.postMessage({
+      type: "stop"
+    });
+
+    setStatus("stopped");
   }
 
   function reset() {
+    workerRef.current?.terminate();
+
+    workerRef.current =
+      null;
+
     setStatus("idle");
     setProgress(0);
     setChecked(0);
-    setCurrentCandidate("");
     setSpeed(0);
     setElapsed(0);
-    setResult({});
+    setPosition("");
     setError("");
   }
 
@@ -241,15 +367,12 @@ export default function Home() {
             </div>
 
             <h1>
-              Synthetic Cryptographic
-              Benchmark
+              Cryptographic Benchmark
             </h1>
 
             <p className="subtitle">
-              Deterministic bounded-range
-              calculation with live progress,
-              matching and exact range
-              positioning.
+              Web Worker powered bounded
+              synthetic calculation.
             </p>
           </div>
 
@@ -265,8 +388,8 @@ export default function Home() {
             {status === "found" &&
               "MATCH FOUND"}
 
-            {status === "not-found" &&
-              "NO MATCH"}
+            {status === "complete" &&
+              "COMPLETE"}
 
             {status === "stopped" &&
               "STOPPED"}
@@ -278,7 +401,7 @@ export default function Home() {
 
         <section className="card">
           <h2>
-            Target Configuration
+            Target
           </h2>
 
           <div className="grid">
@@ -289,7 +412,9 @@ export default function Home() {
               </label>
 
               <input
-                value={range.start}
+                value={
+                  range.start
+                }
                 readOnly
               />
             </div>
@@ -300,7 +425,9 @@ export default function Home() {
               </label>
 
               <input
-                value={range.end}
+                value={
+                  range.end
+                }
                 readOnly
               />
             </div>
@@ -309,41 +436,34 @@ export default function Home() {
 
           <div className="field">
             <label>
-              Synthetic Public Key
+              Public Key
             </label>
 
             <input
-              value={target.publicKey}
+              value={
+                target.publicKey
+              }
               readOnly
             />
           </div>
 
           <div className="field">
             <label>
-              Synthetic BTC Address
+              BTC Address
             </label>
 
             <input
-              value={target.btcAddress}
-              readOnly
-            />
-          </div>
-
-          <div className="field">
-            <label>
-              Synthetic Match Token
-            </label>
-
-            <input
-              value={target.matchToken}
+              value={
+                target.btcAddress
+              }
               readOnly
             />
           </div>
 
           <div className="notice">
-            The public key and address are
-            target metadata. The private test
-            scalar is not stored in ArbiScan.
+            The discovered candidate is
+            never displayed. Only its
+            calculated position is reported.
           </div>
         </section>
 
@@ -357,11 +477,9 @@ export default function Home() {
               </span>
 
               <strong>
-                {rangeInfo.valid
-                  ? rangeInfo.total.toLocaleString(
-                      "en-US"
-                    )
-                  : "Invalid"}
+                {rangeInfo.total.toLocaleString(
+                  "en-US"
+                )}
               </strong>
             </div>
 
@@ -371,8 +489,8 @@ export default function Home() {
               </span>
 
               <strong>
-                {rangeInfo.exponent !== null
-                  ? `2^${rangeInfo.exponent}`
+                {rangeInfo.power !== null
+                  ? `2^${rangeInfo.power}`
                   : "Non power-of-two"}
               </strong>
             </div>
@@ -393,10 +511,11 @@ export default function Home() {
             <div
               className="progress-bar"
               style={{
-                width: `${Math.min(
-                  progress,
-                  100
-                )}%`
+                width:
+                  `${Math.min(
+                    progress,
+                    100
+                  )}%`
               }}
             />
           </div>
@@ -409,7 +528,9 @@ export default function Home() {
               </span>
 
               <strong>
-                {formatNumber(checked)}
+                {formatNumber(
+                  checked
+                )}
               </strong>
             </div>
 
@@ -448,7 +569,9 @@ export default function Home() {
 
               <strong>
                 {formatNumber(
-                  Math.round(speed)
+                  Math.round(
+                    speed
+                  )
                 )}
               </strong>
             </div>
@@ -459,34 +582,23 @@ export default function Home() {
               </span>
 
               <strong>
-                {(elapsed / 1000).toFixed(
-                  3
-                )}s
+                {(
+                  elapsed / 1000
+                ).toFixed(3)}
+                s
               </strong>
             </div>
 
             <div>
               <span>
-                Status
+                Position
               </span>
 
               <strong>
-                {status.toUpperCase()}
+                {position ||
+                  "—"}
               </strong>
             </div>
-
-          </div>
-
-          <div className="candidate">
-
-            <span>
-              Current Candidate
-            </span>
-
-            <code>
-              {currentCandidate ||
-                "Waiting to start..."}
-            </code>
 
           </div>
 
@@ -497,7 +609,8 @@ export default function Home() {
                 startCalculation
               }
               disabled={
-                status === "running"
+                status ===
+                "running"
               }
             >
               {status === "running"
@@ -507,9 +620,25 @@ export default function Home() {
 
             <button
               className="secondary"
-              onClick={reset}
+              onClick={
+                stopCalculation
+              }
               disabled={
-                status === "running"
+                status !==
+                "running"
+              }
+            >
+              Stop
+            </button>
+
+            <button
+              className="secondary"
+              onClick={
+                reset
+              }
+              disabled={
+                status ===
+                "running"
               }
             >
               Reset
@@ -530,51 +659,11 @@ export default function Home() {
 
               <div>
                 <span>
-                  Discovered Candidate
-                </span>
-
-                <code>
-                  {result.candidate}
-                </code>
-              </div>
-
-              <div>
-                <span>
-                  Match Token
-                </span>
-
-                <code>
-                  {result.matchToken}
-                </code>
-              </div>
-
-              <div>
-                <span>
-                  Offset From Start
-                </span>
-
-                <strong>
-                  {result.offset}
-                </strong>
-              </div>
-
-              <div>
-                <span>
-                  Total Candidates
-                </span>
-
-                <strong>
-                  {result.total}
-                </strong>
-              </div>
-
-              <div>
-                <span>
                   Position In Range
                 </span>
 
                 <strong>
-                  {result.percentage}
+                  {position}
                 </strong>
               </div>
 
@@ -585,8 +674,7 @@ export default function Home() {
 
                 <strong>
                   {formatNumber(
-                    result.candidatesChecked ||
-                      0
+                    checked
                   )}
                 </strong>
               </div>
@@ -599,8 +687,7 @@ export default function Home() {
                 <strong>
                   {formatNumber(
                     Math.round(
-                      result.candidatesPerSecond ||
-                        0
+                      speed
                     )
                   )}{" "}
                   / sec
@@ -614,8 +701,8 @@ export default function Home() {
 
                 <strong>
                   {(
-                    (result.elapsedMs ||
-                      0) / 1000
+                    elapsed /
+                    1000
                   ).toFixed(3)}
                   s
                 </strong>
@@ -626,19 +713,18 @@ export default function Home() {
           </section>
         )}
 
-        {status === "not-found" && (
+        {status === "complete" && (
           <section className="card">
-
             <h2>
-              No Match
+              Benchmark Complete
             </h2>
 
             <p>
-              No matching synthetic candidate
-              was found in the configured
-              executable benchmark range.
+              The entire configured
+              synthetic benchmark range
+              was processed without a
+              matching target.
             </p>
-
           </section>
         )}
 
