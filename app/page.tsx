@@ -1,214 +1,311 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import targetData from "@/data/test-target.json";
+import {
+  runBenchmark,
+  validateBenchmarkRange,
+  MAX_BENCHMARK_CANDIDATES
+} from "@/lib/benchmark";
+import { positionInRange } from "@/lib/position";
 
 type Status =
   | "idle"
   | "running"
-  | "complete"
+  | "found"
+  | "not-found"
+  | "stopped"
   | "error";
 
 export default function Home() {
   const [status, setStatus] =
     useState<Status>("idle");
 
-  const [progress, setProgress] =
-    useState(0);
-
-  const [checked, setChecked] =
-    useState(0);
-
+  const [progress, setProgress] = useState(0);
+  const [checked, setChecked] = useState(0);
   const [currentCandidate, setCurrentCandidate] =
     useState("");
 
-  const [error, setError] =
-    useState("");
+  const [result, setResult] = useState<{
+    candidate?: string;
+    candidateHash?: string;
+    offset?: string;
+    total?: string;
+    percentage?: string;
+    candidatesChecked?: number;
+    elapsedMs?: number;
+  }>({});
 
-  const start =
-    targetData.range.start;
+  const [error, setError] = useState("");
 
-  const end =
-    targetData.range.end;
+  const range = targetData.range;
+  const target = targetData.target;
 
-  const publicKey =
-    targetData.target.publicKey;
+  const rangeInfo = useMemo(() => {
+    try {
+      const info = validateBenchmarkRange(
+        range.start,
+        range.end
+      );
 
-  const btcAddress =
-    targetData.target.btcAddress;
+      return {
+        total: info.total.toString(),
+        valid: true
+      };
+    } catch {
+      return {
+        total: "0",
+        valid: false
+      };
+    }
+  }, []);
 
-  function reset() {
-    setStatus("idle");
+  async function startCalculation() {
+    if (status === "running") {
+      return;
+    }
+
+    setStatus("running");
     setProgress(0);
     setChecked(0);
     setCurrentCandidate("");
+    setResult({});
     setError("");
-  }
-
-  async function startCalculation() {
-    reset();
-    setStatus("running");
 
     try {
-      const startValue = BigInt(
-        `0x${start.replace(/^0x/i, "")}`
+      const response = await runBenchmark(
+        range.start,
+        range.end,
+        target.candidateHash,
+        (
+          checkedCount,
+          totalCount,
+          candidate
+        ) => {
+          setChecked(checkedCount);
+          setCurrentCandidate(candidate);
+
+          const percentage =
+            (checkedCount / totalCount) * 100;
+
+          setProgress(percentage);
+        }
       );
 
-      const endValue = BigInt(
-        `0x${end.replace(/^0x/i, "")}`
-      );
+      setChecked(response.candidatesChecked);
 
-      if (startValue > endValue) {
-        throw new Error(
-          "Range start is greater than range end."
-        );
-      }
-
-      const total =
-        endValue - startValue + 1n;
-
-      /*
-       * Safety limit for the synthetic benchmark.
-       *
-       * The actual cryptographic benchmark will operate
-       * against the separately generated synthetic target.
-       */
-      if (total > 100000n) {
-        throw new Error(
-          "Synthetic benchmark range cannot exceed 100,000 candidates."
-        );
-      }
-
-      /*
-       * This loop is the progress controller.
-       *
-       * The actual synthetic cryptographic calculation
-       * will be connected here.
-       */
-      for (
-        let i = 0n;
-        i < total;
-        i++
-      ) {
-        const candidate =
-          startValue + i;
-
-        setCurrentCandidate(
-          candidate.toString(16)
-        );
-
-        setChecked(
-          Number(i + 1n)
-        );
-
-        const percentage =
-          Number(
-            (i + 1n) * 10000n / total
-          ) / 100;
-
+      if (!response.found || !response.candidate) {
         setProgress(
-          Math.min(100, percentage)
+          response.candidatesChecked /
+            Number(rangeInfo.total) *
+            100
         );
 
-        /*
-         * Yield to the browser so the progress bar
-         * remains responsive.
-         */
-        await new Promise(
-          resolve =>
-            setTimeout(resolve, 1)
-        );
+        setStatus("not-found");
+
+        setResult({
+          candidatesChecked:
+            response.candidatesChecked,
+          elapsedMs: response.elapsedMs
+        });
+
+        return;
       }
 
-      setStatus("complete");
+      const position = positionInRange(
+        range.start,
+        range.end,
+        response.candidate
+      );
 
+      setProgress(100);
+      setCurrentCandidate(response.candidate);
+
+      setResult({
+        candidate: response.candidate,
+        candidateHash:
+          response.candidateHash,
+        offset: position.offset,
+        total: position.total,
+        percentage:
+          position.percentageFormatted,
+        candidatesChecked:
+          response.candidatesChecked,
+        elapsedMs:
+          response.elapsedMs
+      });
+
+      setStatus("found");
     } catch (err) {
       setStatus("error");
 
       setError(
         err instanceof Error
           ? err.message
-          : "Calculation failed."
+          : "Unknown calculation error."
       );
     }
   }
 
+  function reset() {
+    setStatus("idle");
+    setProgress(0);
+    setChecked(0);
+    setCurrentCandidate("");
+    setResult({});
+    setError("");
+  }
+
+  function formatNumber(value: number) {
+    return new Intl.NumberFormat(
+      "en-US"
+    ).format(value);
+  }
+
   return (
     <main className="page">
-      <div className="container">
+      <section className="container">
+        <div className="header">
+          <div>
+            <div className="eyebrow">
+              ARBITSCAN
+            </div>
 
-        <header className="header">
-          <div className="brand">
-            <div className="logo">
-              A
+            <h1>
+              Synthetic Cryptographic Benchmark
+            </h1>
+
+            <p className="subtitle">
+              Bounded deterministic range search
+              with live progress and exact
+              position reporting.
+            </p>
+          </div>
+
+          <div
+            className={`status status-${status}`}
+          >
+            {status === "idle" && "READY"}
+            {status === "running" && "RUNNING"}
+            {status === "found" && "MATCH FOUND"}
+            {status === "not-found" &&
+              "NO MATCH"}
+            {status === "stopped" &&
+              "STOPPED"}
+            {status === "error" && "ERROR"}
+          </div>
+        </div>
+
+        <section className="card">
+          <h2>Benchmark Input</h2>
+
+          <div className="grid">
+            <div className="field">
+              <label>Range Start</label>
+              <input
+                value={range.start}
+                readOnly
+              />
+            </div>
+
+            <div className="field">
+              <label>Range End</label>
+              <input
+                value={range.end}
+                readOnly
+              />
+            </div>
+          </div>
+
+          <div className="field">
+            <label>Synthetic Public Key</label>
+            <input
+              value={target.publicKey}
+              readOnly
+            />
+          </div>
+
+          <div className="field">
+            <label>BTC Address Field</label>
+            <input
+              value={target.btcAddress}
+              readOnly
+            />
+          </div>
+
+          <div className="field">
+            <label>Target Cryptographic Hash</label>
+            <input
+              value={target.candidateHash}
+              readOnly
+            />
+          </div>
+
+          <div className="notice">
+            Synthetic benchmark only. The
+            private test scalar is not stored
+            in this application.
+          </div>
+        </section>
+
+        <section className="card">
+          <div className="progress-header">
+            <h2>Calculation</h2>
+
+            <strong>
+              {progress.toFixed(4)}%
+            </strong>
+          </div>
+
+          <div className="progress-track">
+            <div
+              className="progress-bar"
+              style={{
+                width: `${Math.min(
+                  progress,
+                  100
+                )}%`
+              }}
+            />
+          </div>
+
+          <div className="stats">
+            <div>
+              <span>Checked</span>
+              <strong>
+                {formatNumber(checked)}
+              </strong>
             </div>
 
             <div>
-              <h1 className="title">
-                ArbitScan
-              </h1>
+              <span>Total</span>
+              <strong>
+                {formatNumber(
+                  Number(rangeInfo.total)
+                )}
+              </strong>
+            </div>
 
-              <p className="subtitle">
-                Synthetic cryptographic range analyzer
-              </p>
+            <div>
+              <span>Limit</span>
+              <strong>
+                {formatNumber(
+                  MAX_BENCHMARK_CANDIDATES
+                )}
+              </strong>
             </div>
           </div>
-        </header>
 
-        <section className="card">
+          <div className="candidate">
+            <span>Current Candidate</span>
 
-          <h2>
-            Test Target
-          </h2>
-
-          <div className="field">
-            <label>
-              Range Start
-            </label>
-
-            <input
-              value={`0x${start}`}
-              readOnly
-            />
-          </div>
-
-          <div className="field">
-            <label>
-              Range End
-            </label>
-
-            <input
-              value={`0x${end}`}
-              readOnly
-            />
-          </div>
-
-          <div className="field">
-            <label>
-              Public Key
-            </label>
-
-            <input
-              value={publicKey}
-              readOnly
-              spellCheck={false}
-            />
-          </div>
-
-          <div className="field">
-            <label>
-              Bitcoin Address
-            </label>
-
-            <input
-              value={btcAddress}
-              readOnly
-              spellCheck={false}
-            />
+            <code>
+              {currentCandidate ||
+                "Waiting to start..."}
+            </code>
           </div>
 
           <div className="actions">
-
             <button
               onClick={startCalculation}
               disabled={
@@ -229,134 +326,91 @@ export default function Home() {
             >
               Reset
             </button>
-
           </div>
-
-          {error && (
-            <div className="error">
-              {error}
-            </div>
-          )}
-
         </section>
 
-        <section className="card">
+        {status === "found" && (
+          <section className="card result-card">
+            <h2>Match Found</h2>
 
-          <h2>
-            Calculation Progress
-          </h2>
-
-          <div className="progressBox">
-
-            <div className="progressHeader">
-              <span>
-                Progress
-              </span>
-
-              <span>
-                {progress.toFixed(2)}%
-              </span>
-            </div>
-
-            <div className="progressTrack">
-              <div
-                className="progressBar"
-                style={{
-                  width:
-                    `${progress}%`
-                }}
-              />
-            </div>
-
-            <div className="progressHeader">
-              <span>
-                Candidates checked
-              </span>
-
-              <span>
-                {checked.toLocaleString()}
-              </span>
-            </div>
-
-            {currentCandidate && (
-              <div className="current">
-                Current candidate:
-                {" "}
-                0x{currentCandidate}
-              </div>
-            )}
-
-          </div>
-
-        </section>
-
-        {status === "complete" && (
-          <section className="card result">
-
-            <h2>
-              Calculation Complete
-            </h2>
-
-            <p className="note">
-              The bounded synthetic calculation has
-              completed. The cryptographic match result
-              will be displayed here once the synthetic
-              target-search engine is connected.
-            </p>
-
-            <div className="stats">
-
-              <div className="stat">
-                <div className="statLabel">
-                  Range Start
-                </div>
-
-                <div className="statValue">
-                  0x{start}
-                </div>
+            <div className="result-grid">
+              <div>
+                <span>Discovered Candidate</span>
+                <code>
+                  {result.candidate}
+                </code>
               </div>
 
-              <div className="stat">
-                <div className="statLabel">
-                  Range End
-                </div>
-
-                <div className="statValue">
-                  0x{end}
-                </div>
+              <div>
+                <span>Candidate Hash</span>
+                <code>
+                  {result.candidateHash}
+                </code>
               </div>
 
-              <div className="stat">
-                <div className="statLabel">
-                  Candidates
-                </div>
-
-                <div className="statValue">
-                  {checked.toLocaleString()}
-                </div>
+              <div>
+                <span>Offset From Start</span>
+                <strong>
+                  {result.offset}
+                </strong>
               </div>
 
+              <div>
+                <span>Total Range</span>
+                <strong>
+                  {result.total}
+                </strong>
+              </div>
+
+              <div>
+                <span>Position</span>
+                <strong>
+                  {result.percentage}
+                </strong>
+              </div>
+
+              <div>
+                <span>Candidates Checked</span>
+                <strong>
+                  {formatNumber(
+                    result.candidatesChecked ||
+                      0
+                  )}
+                </strong>
+              </div>
+
+              <div>
+                <span>Elapsed</span>
+                <strong>
+                  {(
+                    (result.elapsedMs || 0) /
+                    1000
+                  ).toFixed(3)}
+                  s
+                </strong>
+              </div>
             </div>
-
           </section>
         )}
 
-        <section className="card">
+        {status === "not-found" && (
+          <section className="card">
+            <h2>No Match</h2>
+            <p>
+              The supplied target was not found
+              within the configured benchmark
+              range.
+            </p>
+          </section>
+        )}
 
-          <p className="note">
-            Target data is loaded from
-            {" "}
-            <code>
-              data/test-target.json
-            </code>
-            .
-            The private test scalar is not stored in
-            ArbitScan.
-          </p>
-
-        </section>
-
-      </div>
+        {status === "error" && (
+          <section className="card error-card">
+            <h2>Calculation Error</h2>
+            <p>{error}</p>
+          </section>
+        )}
+      </section>
     </main>
   );
 }
