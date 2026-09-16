@@ -1,0 +1,15 @@
+{
+  "name": "Synthetic Bitcoin Test 001",
+
+  "range": {
+    "start": "100000",
+    "end": "1fffff"
+  },
+
+  "target": {
+    "publicKey": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "btcAddress": "1SyntheticTestAddress000000000000000"
+  },
+
+  "notes": "Synthetic benchmark input. The private test scalar is stored separately and is not included in ArbitScan."
+}
