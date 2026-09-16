@@ -1,20 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import targetData from "@/data/test-target.json";
 
 type Status =
   | "idle"
   | "running"
-  | "found"
   | "complete"
   | "error";
 
 export default function Home() {
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
-  const [publicKey, setPublicKey] = useState("");
-  const [address, setAddress] = useState("");
-
   const [status, setStatus] =
     useState<Status>("idle");
 
@@ -22,129 +17,106 @@ export default function Home() {
     useState(0);
 
   const [checked, setChecked] =
-    useState("0");
+    useState(0);
 
-  const [current, setCurrent] =
+  const [currentCandidate, setCurrentCandidate] =
     useState("");
-
-  const [result, setResult] =
-    useState<{
-      key: string;
-      position: string;
-      percentage: string;
-    } | null>(null);
 
   const [error, setError] =
     useState("");
 
-  async function runCalculation() {
-    setError("");
-    setResult(null);
+  const start =
+    targetData.range.start;
+
+  const end =
+    targetData.range.end;
+
+  const publicKey =
+    targetData.target.publicKey;
+
+  const btcAddress =
+    targetData.target.btcAddress;
+
+  function reset() {
+    setStatus("idle");
     setProgress(0);
-    setChecked("0");
-    setCurrent("");
+    setChecked(0);
+    setCurrentCandidate("");
+    setError("");
+  }
+
+  async function startCalculation() {
+    reset();
     setStatus("running");
 
-    /*
-     * The production-safe version deliberately does not
-     * implement arbitrary Bitcoin private-key recovery.
-     *
-     * This is where the bounded synthetic cryptographic
-     * benchmark/search engine can be connected.
-     */
-
     try {
-      if (!start.trim()) {
-        throw new Error(
-          "Range start is required."
-        );
-      }
-
-      if (!end.trim()) {
-        throw new Error(
-          "Range end is required."
-        );
-      }
-
-      if (!publicKey.trim()) {
-        throw new Error(
-          "Public key is required."
-        );
-      }
-
-      if (!address.trim()) {
-        throw new Error(
-          "Address is required."
-        );
-      }
-
       const startValue = BigInt(
-        `0x${start
-          .replace(/^0x/i, "")
-          .trim()}`
+        `0x${start.replace(/^0x/i, "")}`
       );
 
       const endValue = BigInt(
-        `0x${end
-          .replace(/^0x/i, "")
-          .trim()}`
+        `0x${end.replace(/^0x/i, "")}`
       );
 
       if (startValue > endValue) {
         throw new Error(
-          "Range start must not exceed range end."
+          "Range start is greater than range end."
         );
       }
-
-      /*
-       * Safety bound for the local benchmark.
-       *
-       * This keeps the demonstration a deliberately
-       * small bounded calculation.
-       */
-      const span =
-        endValue - startValue + 1n;
-
-      if (span > 100000n) {
-        throw new Error(
-          "Test calculation is limited to 100,000 candidates."
-        );
-      }
-
-      /*
-       * Real progress simulation for the bounded
-       * benchmark pipeline. Replace this section with
-       * the permitted synthetic cryptographic target
-       * calculation.
-       */
 
       const total =
-        Number(span);
+        endValue - startValue + 1n;
 
+      /*
+       * Safety limit for the synthetic benchmark.
+       *
+       * The actual cryptographic benchmark will operate
+       * against the separately generated synthetic target.
+       */
+      if (total > 100000n) {
+        throw new Error(
+          "Synthetic benchmark range cannot exceed 100,000 candidates."
+        );
+      }
+
+      /*
+       * This loop is the progress controller.
+       *
+       * The actual synthetic cryptographic calculation
+       * will be connected here.
+       */
       for (
-        let i = 0;
+        let i = 0n;
         i < total;
         i++
       ) {
         const candidate =
-          startValue +
-          BigInt(i);
+          startValue + i;
 
-        setCurrent(
+        setCurrentCandidate(
           candidate.toString(16)
         );
 
         setChecked(
-          (i + 1).toString()
+          Number(i + 1n)
         );
+
+        const percentage =
+          Number(
+            (i + 1n) * 10000n / total
+          ) / 100;
 
         setProgress(
-          ((i + 1) / total) * 100
+          Math.min(100, percentage)
         );
 
+        /*
+         * Yield to the browser so the progress bar
+         * remains responsive.
+         */
         await new Promise(
           resolve =>
-            setTimeout(resolve, 2)
+            setTimeout(resolve, 1)
         );
       }
 
@@ -159,15 +131,6 @@ export default function Home() {
           : "Calculation failed."
       );
     }
-  }
-
-  function reset() {
-    setStatus("idle");
-    setProgress(0);
-    setChecked("0");
-    setCurrent("");
-    setResult(null);
-    setError("");
   }
 
   return (
@@ -185,9 +148,9 @@ export default function Home() {
                 ArbitScan
               </h1>
 
-              <div className="subtitle">
-                Cryptographic range analyzer
-              </div>
+              <p className="subtitle">
+                Synthetic cryptographic range analyzer
+              </p>
             </div>
           </div>
         </header>
@@ -195,65 +158,51 @@ export default function Home() {
         <section className="card">
 
           <h2>
-            Target Configuration
+            Test Target
           </h2>
 
           <div className="field">
             <label>
-              Range Start — HEX
+              Range Start
             </label>
 
             <input
-              value={start}
-              onChange={e =>
-                setStart(e.target.value)
-              }
-              placeholder="100"
-              spellCheck={false}
+              value={`0x${start}`}
+              readOnly
             />
           </div>
 
           <div className="field">
             <label>
-              Range End — HEX
+              Range End
             </label>
 
             <input
-              value={end}
-              onChange={e =>
-                setEnd(e.target.value)
-              }
-              placeholder="1ff"
-              spellCheck={false}
+              value={`0x${end}`}
+              readOnly
             />
           </div>
 
           <div className="field">
             <label>
-              Target Public Key
+              Public Key
             </label>
 
             <input
               value={publicKey}
-              onChange={e =>
-                setPublicKey(e.target.value)
-              }
-              placeholder="02..."
+              readOnly
               spellCheck={false}
             />
           </div>
 
           <div className="field">
             <label>
-              Target Address
+              Bitcoin Address
             </label>
 
             <input
-              value={address}
-              onChange={e =>
-                setAddress(e.target.value)
-              }
-              placeholder="1..."
+              value={btcAddress}
+              readOnly
               spellCheck={false}
             />
           </div>
@@ -261,7 +210,7 @@ export default function Home() {
           <div className="actions">
 
             <button
-              onClick={runCalculation}
+              onClick={startCalculation}
               disabled={
                 status === "running"
               }
@@ -301,11 +250,11 @@ export default function Home() {
 
             <div className="progressHeader">
               <span>
-                Candidates checked
+                Progress
               </span>
 
               <span>
-                {checked}
+                {progress.toFixed(2)}%
               </span>
             </div>
 
@@ -321,18 +270,19 @@ export default function Home() {
 
             <div className="progressHeader">
               <span>
-                Progress
+                Candidates checked
               </span>
 
               <span>
-                {progress.toFixed(2)}%
+                {checked.toLocaleString()}
               </span>
             </div>
 
-            {current && (
+            {currentCandidate && (
               <div className="current">
-                Current candidate: 0x
-                {current}
+                Current candidate:
+                {" "}
+                0x{currentCandidate}
               </div>
             )}
 
@@ -340,46 +290,49 @@ export default function Home() {
 
         </section>
 
-        {result && (
+        {status === "complete" && (
           <section className="card result">
 
             <h2>
-              Match Found
+              Calculation Complete
             </h2>
 
-            <div className="percent">
-              {result.percentage}
-            </div>
+            <p className="note">
+              The bounded synthetic calculation has
+              completed. The cryptographic match result
+              will be displayed here once the synthetic
+              target-search engine is connected.
+            </p>
 
             <div className="stats">
 
               <div className="stat">
                 <div className="statLabel">
-                  Private Key
+                  Range Start
                 </div>
 
                 <div className="statValue">
-                  0x{result.key}
+                  0x{start}
                 </div>
               </div>
 
               <div className="stat">
                 <div className="statLabel">
-                  Position
+                  Range End
                 </div>
 
                 <div className="statValue">
-                  {result.position}
+                  0x{end}
                 </div>
               </div>
 
               <div className="stat">
                 <div className="statLabel">
-                  Status
+                  Candidates
                 </div>
 
                 <div className="statValue">
-                  VERIFIED MATCH
+                  {checked.toLocaleString()}
                 </div>
               </div>
 
@@ -389,14 +342,18 @@ export default function Home() {
         )}
 
         <section className="card">
+
           <p className="note">
-            ArbitScan uses arbitrary-precision integer
-            arithmetic for range calculations. The
-            public-key/address fields are target
-            reference fields; this version does not
-            implement arbitrary Bitcoin private-key
-            recovery.
+            Target data is loaded from
+            {" "}
+            <code>
+              data/test-target.json
+            </code>
+            .
+            The private test scalar is not stored in
+            ArbitScan.
           </p>
+
         </section>
 
       </div>
