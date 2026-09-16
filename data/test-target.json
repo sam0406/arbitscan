@@ -8,10 +8,7 @@
   "target": {
     "publicKey": "031f6a332d3c5c4f2de2378c012f429cd109ba07d69690c6c701b6bb87860d6640",
     "btcAddress": "1QKBaU6WAeycb3DbKbLBkX7vJiaS8r42Xo",
-    "candidateHash": ""
+    "matchToken": ""
   },
-  "notes": "Synthetic benchmark target. No Bitcoin private key is stored in ArbiScan."
+  "notes": "Synthetic benchmark target. The private test scalar is maintained outside ArbiScan."
 }
-
-
-
